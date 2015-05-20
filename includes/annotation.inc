@@ -48,7 +48,7 @@ function islandora_image_annotation_get_callback(AbstractObject $object) {
  * @param AbstractObject $object
  *   The object in which the new annotation will 'annotate'.
  */
-function islandora_image_annotation_add_callback(AbstractObject $object) {
+function islandora_image_annotation_add_callback(AbstractObject $object, AbstractObject $annotation_object = NULL) {
   global $user;
   module_load_include('inc', 'islandora', 'includes/utilities');
   // Transform the posted HTML into RDF.
@@ -59,11 +59,17 @@ function islandora_image_annotation_add_callback(AbstractObject $object) {
   if (empty($properties['label']) || empty($properties['type']) || empty($properties['urn'])) {
     return;
   }
-  // Create the new annotation object.
-  $namespace = islandora_get_namespace($object->id);
-  $annotation_object = $object->repository->constructObject($namespace);
-  $annotation_object->label = $properties['label'];
+
+  if ($annotation_object === NULL) {
+    // Create the new annotation object.
+    $namespace = islandora_get_namespace($object->id);
+    $annotation_object = $object->repository->constructObject($namespace);
+    $annotation_object->label = $properties['label'];
+  }
+
   $annotation_object->models = 'islandora:OACCModel';
+
+  $annotation_object->relationships->autoCommit = FALSE;
   $annotation_object->relationships->add(FEDORA_RELS_EXT_URI, 'isMemberOf', $object->id);
   $annotation_object->relationships->add(FEDORA_RELS_EXT_URI, 'isAnnotationOf', $object->id);
   $annotation_object->relationships->add(ISLANDORA_RELS_EXT_URI, 'targetedBy', $user->name, RELS_TYPE_PLAIN_LITERAL);
@@ -73,14 +79,19 @@ function islandora_image_annotation_add_callback(AbstractObject $object) {
   if (!empty($properties['entity'])) {
     $annotation_object->relationships->add(ISLANDORA_RELS_EXT_URI, 'isEntity', $properties['entity'], RELS_TYPE_PLAIN_LITERAL);
   }
+  $annotation_object->relationships->autoCommit = TRUE;
   // Create Datastream for the RDF.
   $oac_datastream = $annotation_object->constructDatastream('OAC', 'X');
   $oac_datastream->label = 'OAC';
   $oac_datastream->mimetype = 'text/xml';
   $oac_datastream->content = $rdf->saveXML();
   $annotation_object->ingestDatastream($oac_datastream);
-  // Ingest the object and return it's PID to the client side application.
-  islandora_add_object($annotation_object);
+
+  if ($annotation_object instanceof NewFedoraObject) {
+    // Ingest the object.
+    islandora_add_object($annotation_object);
+  }
+  // Return the PID to the client side application.
   echo $annotation_object->id;
   drupal_exit();
 }
